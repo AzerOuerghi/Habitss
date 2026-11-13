@@ -14,7 +14,7 @@ Appli web Next.js (PWA) : l'utilisateur consigne ses habitudes quotidiennes (som
 | Données | MongoDB 8.0.38 sur WSL Ubuntu (`mongodb://127.0.0.1:27017`), driver officiel `mongodb` v7 |
 | Auth | **Supabase Auth** (email/password) — *remplace Firebase du cahier des charges* |
 | Mutations | **Server Actions** uniquement (pas de REST sauf 1 route pour le PDF si besoin) |
-| IA | Groq (`llama-3.3-70b`) ou Gemini (`gemini-2.0-flash`) — free tier, appel HTTP simple |
+| IA | OpenRouter → `nvidia/nemotron-3.5-super-vl:free` (gratuit). Fallbacks Groq / Gemini intégrés, un seul `askAI()` |
 | UI | Tailwind CSS + shadcn/ui |
 | Graphiques | Recharts |
 | PDF | page `/report` + `window.print()` (CSS `@media print`) |
@@ -32,10 +32,14 @@ MONGODB_DB=habits
 NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxx
 
-GROQ_API_KEY=gsk_xxxx
-# ou
-GEMINI_API_KEY=xxxx
+# IA : une seule clé suffit, priorité OpenRouter > Groq > Gemini
+OPENROUTER_API_KEY=sk-or-v1-xxxx
+OPENROUTER_MODEL=nvidia/nemotron-3.5-super-vl:free
+# GROQ_API_KEY=gsk_xxxx
+# GEMINI_API_KEY=xxxx
 ```
+
+`lib/ai.ts` détecte seule la clé présente. Si aucune n'est configurée, `askAI()` renvoie un message d'indisponibilité au lieu de lever une exception : les corrélations et la prédiction, calculées localement, restent affichées.
 
 ---
 
@@ -199,11 +203,11 @@ Le projet est déjà scaffoldé et les dépendances installées. Il reste 3 chos
 
 **2. Supabase.** Créer le projet, copier l'URL et la clé `anon` depuis *Project Settings → API*. **Pour la démo : désactiver la confirmation par email** (*Authentication → Sign In / Providers → Email → décocher « Confirm email »*), sinon chaque inscription attend un clic dans la boîte mail.
 
-**3. Clé IA.** Groq sur [console.groq.com/keys](https://console.groq.com/keys) (le plus rapide) ou Gemini sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Une seule des deux suffit, `lib/ai.ts` détecte laquelle est présente.
+**3. Clé IA — fait.** OpenRouter avec `nvidia/nemotron-3.5-super-vl:free`. Vérifié de bout en bout via `npm run check` : 4 conseils en français, chacun adossé à une corrélation mesurée. Groq et Gemini restent branchables sans changer une ligne de code applicatif.
 
 ```bash
 cp .env.local.example .env.local   # puis remplir les 4 valeurs
-npm run dev                        # http://localhost:3000
+npm run dev                        # http://localhost:3100
 
 # créer un compte dans l'app, puis :
 npm run seed                       # 60 jours de données corrélées
@@ -261,6 +265,8 @@ Squelette complet livré, les 5 modules ont une version qui tourne de bout en bo
 | `E: Unable to locate package mongodb-org` | Ubuntu 26.04 (`resolute`) : MongoDB n'y publie pas le serveur | pointer le dépôt sur `noble` (24.04) |
 | **Les corrélations J+1 renvoyaient le même r que le même-jour** | `new Date("2026-11-13T00:00:00")` est interprété en heure locale puis `toISOString()` reconvertit en UTC : en UTC+1 le `+1 jour` était annulé, `addDays(d, 1) === d` | arithmétique en UTC pur dans `addDays` (`Date.UTC` + `setUTCDate`) |
 | `Top-level await is currently not supported with the "cjs" output format` | pas de `"type": "module"` dans `package.json`, tsx compile en CJS | envelopper les scripts dans `async function main()` |
+| `EACCES: permission denied 0.0.0.0:3000` | Hyper-V/WSL réserve la plage de ports 2940-3039, qui contient 3000 (`netsh interface ipv4 show excludedportrange protocol=tcp`) | le script `dev` tourne sur **3100**. Libérer 3000 demanderait `net stop winnat` en admin, et la réservation revient au reboot |
+| `EADDRINUSE :::3100` | un `npm run dev` tourne déjà | fermer l'autre terminal, ou `npm run dev -- -p 3200` |
 
 ---
 

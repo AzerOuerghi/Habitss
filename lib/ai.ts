@@ -6,7 +6,8 @@
 
 type Msg = { role: "user" | "assistant" | "system"; content: string };
 
-export function aiProvider(): "groq" | "gemini" | "none" {
+export function aiProvider(): "openrouter" | "groq" | "gemini" | "none" {
+  if (process.env.OPENROUTER_API_KEY) return "openrouter";
   if (process.env.GROQ_API_KEY) return "groq";
   if (process.env.GEMINI_API_KEY) return "gemini";
   return "none";
@@ -20,6 +21,7 @@ export async function askAI(
   const provider = aiProvider();
 
   try {
+    if (provider === "openrouter") return await askOpenRouter(messages, system);
     if (provider === "groq") return await askGroq(messages, system);
     if (provider === "gemini") return await askGemini(messages, system);
   } catch (err) {
@@ -27,7 +29,35 @@ export async function askAI(
     return "L'analyse IA est momentanément indisponible. Les corrélations ci-dessus restent calculées localement.";
   }
 
-  return "Aucune clé IA configurée (GROQ_API_KEY ou GEMINI_API_KEY dans .env.local).";
+  return "Aucune clé IA configurée (OPENROUTER_API_KEY, GROQ_API_KEY ou GEMINI_API_KEY dans .env.local).";
+}
+
+/**
+ * OpenRouter : API compatible OpenAI, donc un seul format de messages.
+ * Modèle par défaut gratuit ; surchargeable avec OPENROUTER_MODEL.
+ * Attention : Nemotron renvoie aussi un champ `reasoning` à côté de
+ * `content` — on ne lit que `content`, le raisonnement interne ne doit
+ * jamais finir affiché à l'utilisateur.
+ */
+async function askOpenRouter(messages: Msg[], system?: string) {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "HTTP-Referer": "http://localhost:3100",
+      "X-Title": "AI Habits & Symptoms",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENROUTER_MODEL || "nvidia/nemotron-3.5-super-vl:free",
+      temperature: 0.4,
+      messages: system ? [{ role: "system", content: system }, ...messages] : messages,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content ?? "").trim();
 }
 
 async function askGroq(messages: Msg[], system?: string) {
